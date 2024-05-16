@@ -35,3 +35,6 @@ terraform.rc
 
 # ignore license files
 license.sig
+
+# ignore .terraform.lock.hcl
+.terraform.lock.hcl

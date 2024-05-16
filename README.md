@@ -71,7 +71,7 @@ it creates below GCP resources:
 scaling cmd alias:
 alias scaleup='gcloud container clusters resize hac-robin-cluster --region=us-central1 --node-pool=gpu --num-nodes=2 -q > /dev/null 2>&1 &
 
-issue1 :
+#### issue1 :
 ```bash
 │ Error: Error creating KeyRing: googleapi: Error 403: Google Cloud KMS API has not been used in project 35775501766 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/cloudkms.googleapis.com/overview?project=35775501766 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.
 │ 
@@ -80,9 +80,9 @@ issue1 :
 │    6: resource "google_kms_key_ring" "default" {
 │ 
 ```
-fixed by run terraform apply again
+> fixed by run terraform apply again
 
-issue2:
+#### issue2:
 ```bash
 ╷
 │ Error: Error creating Topic: googleapi: Error 400: Cloud Pub/Sub did not have the necessary permissions configured to support this operation. Please verify that the service account service-35775501766@gcp-sa-pubsub.iam.gserviceaccount.com was granted the Cloud KMS CryptoKey Encrypter/Decrypter role for the project containing the CryptoKey resource projects/eng-robin-vllm-benchmark/locations/global/keyRings/wandb-evolving-joey/cryptoKeys/wandb-key.
@@ -92,9 +92,9 @@ issue2:
 │    5: resource "google_pubsub_topic" "file_storage" {
 │ 
 ```
-fixed by run terraform apply again
+> fixed by run terraform apply again
 
-issue3:
+#### issue3:
 ```bash
 │ Error: Kubernetes cluster unreachable: invalid configuration: no configuration has been provided, try setting KUBERNETES_MASTER environment variable
 │ 
@@ -103,7 +103,7 @@ issue3:
 │    1: resource "helm_release" "operator" {
 │ 
 ```
-fixed by connecting:
+> fixed by exposing kubeconfig:
 ```bash
 gcloud container clusters get-credentials wandb-cluster --zone us-central1-a --project eng-robin-vllm-benchmark
 export KUBECONFIG=/Users/binliu/.kube/config
@@ -129,19 +129,8 @@ helm upgrade --install ingress-nginx ingress-nginx \
   --namespace ingress-nginx --create-namespace
 ```
 ### create a secret for the TLS cert:
-1. create a file `tls-secret.yaml` with public CA signed cert/key:
-   ```yaml
-   apiVersion: v1
-   kind: Secret
-   metadata:
-     name: tls-secret
-     namespace: default
-   data:
-     tls.crt: LS0tXXXXXX
-     tls.key: LS0tLS1XXXX
-   type: kubernetes.io/tls
-   ```
-2. `kubectl apply -f tls-secret.yaml`
+1. get certs from cert-manager or public CA tls.crt/tls.key pair
+2. `kubectl create secret tls tls-secret --cert=tls.crt --key=tls.key`
 ### create ingress for W&B:
 1. create a file `wandb-ingress.yaml`:
    ```yaml
@@ -188,6 +177,9 @@ helm upgrade --install ingress-nginx ingress-nginx \
 1. install wandb cli
    ```bash
    pip install wandb
+   ```
+2. login with api-key
+   ```bash
    wandb login --relogin --host=https://wandb-robin.gke2.haic.me
    # copy/paste api-key when prompted
    ```
@@ -223,5 +215,9 @@ helm upgrade --install ingress-nginx ingress-nginx \
 
    # [optional] finish the wandb run, necessary in notebooks
    wandb.finish()
+   ```
+2. run the script:
+   ```bash
+   python test.py
    ```
 ### 
