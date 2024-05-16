@@ -1,2 +1,3 @@
-# wandb
-wandb
+# wandb trial
+## create tfvars
+
