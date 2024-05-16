@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wandb-nginx
+  namespace: default
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: wandb-robin.gke2.haic.me
+    http:
+      paths:
+      - backend:
+          service:
+            name: wandb-app
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
+      - backend:
+          service:
+            name: wandb-console
+            port:
+              number: 8082
+        path: /console
+        pathType: Prefix
+  tls:
+  - hosts:
+    - wandb-gcp-robin.haic.me
+    secretName: tls-secret

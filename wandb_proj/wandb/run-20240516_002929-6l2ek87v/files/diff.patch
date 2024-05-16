@@ -1,0 +1,169 @@
+diff --git a/README.md b/README.md
+index e26c45c..4304228 100644
+--- a/README.md
++++ b/README.md
+@@ -1,12 +1,13 @@
+ # wandb trial on GCP
+ ## prepare installer
+-- ref: https://docs.wandb.ai/guides/hosting/self-managed/gcp-tf
++> https://docs.wandb.ai/guides/hosting/self-managed/gcp-tf
+ - using local machine(macOS) as installer
+ - using GCP existing project: `eng-robin-vllm-benchmark`
++- pre-exising GCP bucket: `robin-tfstate-gcs-bucket`
+ - my user has `Owner` role on the project
+ - already authenticated with gcloud `gcloud auth application-default login`
+ 
+-##### ignore if already done:
++> ignore if already done:
+ ##### install tfenv
+ ```bash
+ brew install tfenv
+@@ -55,6 +56,131 @@ prefix  = "wandb"
+ 
+ To deploy W&B, execute the following commands:
+ ```
+-terraform init
++terraform init -backend-config=backend-gcp.tfvars
+ terraform apply -var-file=terraform.tfvars
+-```
+\ No newline at end of file
++```
++
++it creates below GCP resources:
++- a GKE cluster: `wandb-cluster`
++  - n1-standard-4 4vcpu, 15GB RAM, 100GB disk, 2 nodes
++- a Cloud SQL instance: `wandb-main-lioness`
++- a Memorystore: `wandb-redis`
++- a GCS bucket: `wandb-tfstate-gcs-bucket`
++## it takes about 10 minutes to deploy
++
++scaling cmd alias:
++alias scaleup='gcloud container clusters resize hac-robin-cluster --region=us-central1 --node-pool=gpu --num-nodes=2 -q > /dev/null 2>&1 &
++
++issue1 :
++```bash
++│ Error: Error creating KeyRing: googleapi: Error 403: Google Cloud KMS API has not been used in project 35775501766 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/cloudkms.googleapis.com/overview?project=35775501766 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.
++│ 
++│   with module.wandb.module.kms[0].google_kms_key_ring.default,
++│   on .terraform/modules/wandb/modules/kms/main.tf line 6, in resource "google_kms_key_ring" "default":
++│    6: resource "google_kms_key_ring" "default" {
++│ 
++```
++fixed by run terraform apply again
++
++issue2:
++```bash
++╷
++│ Error: Error creating Topic: googleapi: Error 400: Cloud Pub/Sub did not have the necessary permissions configured to support this operation. Please verify that the service account service-35775501766@gcp-sa-pubsub.iam.gserviceaccount.com was granted the Cloud KMS CryptoKey Encrypter/Decrypter role for the project containing the CryptoKey resource projects/eng-robin-vllm-benchmark/locations/global/keyRings/wandb-evolving-joey/cryptoKeys/wandb-key.
++│ 
++│   with module.wandb.module.storage[0].module.pubsub[0].google_pubsub_topic.file_storage,
++│   on .terraform/modules/wandb/modules/storage/pubsub/main.tf line 5, in resource "google_pubsub_topic" "file_storage":
++│    5: resource "google_pubsub_topic" "file_storage" {
++│ 
++```
++fixed by run terraform apply again
++
++issue3:
++```bash
++│ Error: Kubernetes cluster unreachable: invalid configuration: no configuration has been provided, try setting KUBERNETES_MASTER environment variable
++│ 
++│   with module.wandb.module.wandb.helm_release.operator,
++│   on .terraform/modules/wandb.wandb/main.tf line 1, in resource "helm_release" "operator":
++│    1: resource "helm_release" "operator" {
++│ 
++```
++fixed by connecting:
++```bash
++gcloud container clusters get-credentials wandb-cluster --zone us-central1-a --project eng-robin-vllm-benchmark
++export KUBECONFIG=/Users/binliu/.kube/config
++export KUBE_CONFIG_PATH=/Users/binliu/.kube/config
++```
++
++untill all terraform apply completed successfully:
++```bash
++Apply complete! Resources: 0 added, 0 changed, 2 destroyed.
++
++Outputs:
++
++address = "34.49.206.72"
++bucket_name = "wandb-happy-grubworm"
++url = "https://wandb-robin.gke2.haic.me"
++```
++
++## Access W&B
++### install nginx ingress controller:
++```bash
++helm upgrade --install ingress-nginx ingress-nginx \
++  --repo https://kubernetes.github.io/ingress-nginx \
++  --namespace ingress-nginx --create-namespace
++```
++### create a secret for the TLS cert:
++1. create a file `tls-secret.yaml` with public CA signed cert/key:
++   ```yaml
++   apiVersion: v1
++   kind: Secret
++   metadata:
++     name: tls-secret
++     namespace: default
++   data:
++     tls.crt: LS0tXXXXXX
++     tls.key: LS0tLS1XXXX
++   type: kubernetes.io/tls
++   ```
++2. `kubectl apply -f tls-secret.yaml`
++### create ingress for W&B:
++1. create a file `wandb-ingress.yaml`:
++   ```yaml
++   apiVersion: networking.k8s.io/v1
++   kind: Ingress
++   metadata:
++     name: wandb-nginx
++     namespace: default
++   spec:
++     ingressClassName: nginx
++     rules:
++     - host: wandb-robin.gke2.haic.me
++       http:
++         paths:
++         - backend:
++             service:
++               name: wandb-app
++               port:
++                 number: 8080
++           path: /
++           pathType: Prefix
++         - backend:
++             service:
++               name: wandb-console
++               port:
++                 number: 8082
++           path: /console
++           pathType: Prefix
++     tls:
++     - hosts:
++       - wandb-gcp-robin.haic.me
++       secretName: tls-secret
++   ``` 
++2. `kubectl apply -f wandb-ingress.yaml`
++
++### config route53 to add a A record for the domain `wandb-robin.gke2.haic.me` to the load balancer IP`
++
++### access the W&B instance at the URL provided in the output
++1. browser goto: https://wandb-robin.gke2.haic.me
++2. create a testuser
++   
++vola!
+diff --git a/terraform/terraform.tfvars b/terraform/terraform.tfvars
+index e99dd7f..1c7b22c 100644
+--- a/terraform/terraform.tfvars
++++ b/terraform/terraform.tfvars
+@@ -3,5 +3,5 @@ region      = "us-central1"
+ zone        = "us-central1-a"
+ namespace   = "wandb"
+ license     = "license.sig"
+-subdomain   = "wandb-gcp"
+-domain_name = "wandb.ml"
+\ No newline at end of file
++subdomain   = "wandb-robin"
++domain_name = "gke2.haic.me"
+\ No newline at end of file
