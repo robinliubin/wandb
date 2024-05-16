@@ -24,7 +24,8 @@ module "wandb" {
   version = "~> 1.0"
 
   namespace   = var.namespace
-  license     = var.license
+  # license     = var.license
+  license = file(var.license)
   domain_name = var.domain_name
   subdomain   = var.subdomain
   allowed_inbound_cidrs = ["*"]
